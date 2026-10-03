@@ -2,7 +2,9 @@
 services:
   - type: web
     name: storyforge
-    runtime: docker
+    runtime: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers --forwarded-allow-ips='*'
     plan: free            # sleeps when idle; use "starter" so background jobs aren't cut off
     healthCheckPath: /health
     envVars:

@@ -8,7 +8,7 @@ structured facts (characters, locations, items, events), builds up a persistent 
 and automatically flags contradictions when new content conflicts with something already
 established — with a citation pointing to exactly where.
 
-**Quick start:** `docker compose up -d`, start the backend (see [Setup](#setup)), then open
+**Quick start:** Ensure PostgreSQL is running, configure `DATABASE_URL` in `backend/.env`, start the backend (see [Setup](#setup)), then open
 http://127.0.0.1:8000 for the website. To put it online, follow [DEPLOY.md](DEPLOY.md).
 
 ---
@@ -19,7 +19,7 @@ http://127.0.0.1:8000 for the website. To put it online, follow [DEPLOY.md](DEPL
 **What it does:** Takes raw chapter text and pulls out structured facts (entity, attribute,
 value, supporting quote, confidence score) using an LLM.
 
-**How it works:** One call to an NVIDIA NIM chat model (`nvidia/nemotron-3-super-120b-a12b`),
+**How it works:** One call to an NVIDIA NIM chat model (`nvidia/llama-3.1-nemotron-70b-instruct`),
 using forced tool/function calling so the model *must* return valid structured JSON matching
 our schema, rather than free text we'd have to parse with regex. The schema is defined once in
 `models.py` (the `Fact` class) and reused everywhere else in the pipeline.
@@ -38,7 +38,7 @@ relation extraction together, which was faster to build and iterate on for a pro
 supports two ways of retrieving facts: exact lookup by entity name, and semantic search by
 meaning.
 
-**How it works:** A local Postgres database (via Docker, with the `pgvector` extension) holds a
+**How it works:** A local native Postgres database (with the `pgvector` extension) holds a
 single `facts` table: entity, attribute, value, source quote, confidence, chapter ID, and an
 embedding vector. Every fact gets embedded (`nvidia/nemotron-3-embed-1b`, 2048-dim vectors) at
 storage time, enabling semantic search later — e.g. searching "who has died in the story" can
@@ -47,10 +47,10 @@ surface a fact phrased as "collapsed and did not rise again" even without exact 
 **Why this approach:** We originally planned Neo4j (graph DB) + a separate vector DB, per the
 original spec. We simplified to one Postgres instance doing both structured lookup and semantic
 search — much faster to stand up, and for a project this size a graph database was more
-infrastructure than the problem needed. We also moved from Supabase (hosted Postgres) to a local
-Dockerized Postgres partway through, for zero-dependency setup across teammates' machines.
+infrastructure than the problem needed. We also moved from Supabase (hosted Postgres) to local
+native Postgres with pgvector.
 
-**File:** `backend/storage.py`, `backend/schema.sql`, `docker-compose.yml`
+**File:** `backend/storage.py`, `backend/schema.sql`
 
 ---
 
@@ -102,8 +102,8 @@ name are shown to the AI, to keep the prompt small.
 ---
 
 ### 5. Infrastructure decisions & lessons learned
-- **Switched from Supabase to local Docker Postgres + pgvector** — no cloud account needed, works
-  identically across every teammate's machine regardless of OS.
+- **Switched from Supabase to local native Postgres + pgvector** — no cloud account needed, works
+  locally on your machine.
 - **Vector index removed (Sept 2026).** pgvector can only index vectors up to 2000 dimensions and
   our embeddings are 2048, so the old `ivfflat` index silently failed to build. Search works fine
   without it at this scale; `schema.sql` explains how to add a `halfvec` index if it ever gets slow.
@@ -227,7 +227,7 @@ name are shown to the AI, to keep the prompt small.
 - **NVIDIA NIM model IDs are not stable long-term.** We hit two rounds of `410 Gone` errors from
   models being retired mid-project (`meta/llama-3.1-70b-instruct`, `meta/llama-3.3-70b-instruct`,
   and the original embedding model `nvidia/nv-embedqa-e5-v5` all got retired within days of each
-  other). We're now on `nvidia/nemotron-3-super-120b-a12b` (chat/tool-calling) and
+  other). We're now on `nvidia/llama-3.1-nemotron-70b-instruct` (chat/tool-calling) and
   `nvidia/nemotron-3-embed-1b` (embeddings, 2048-dim). **If either of these ever breaks with a
   410 error again**, run this to see every model currently live on your API key, rather than
   guessing a new name:
@@ -319,7 +319,7 @@ their data moves into a book called "My story".
 ---
 
 ### 9. Deployment, tests and tidy-up
-- **Deployment:** `Dockerfile` (backend + website in one container), `render.yaml` for Render,
+- **Deployment:** `render.yaml` for Render,
   and step-by-step instructions in [DEPLOY.md](DEPLOY.md). Tables are created automatically on
   start-up, so a fresh hosted database needs no manual setup.
 - **Automated tests:** 111 tests in `backend/tests/` using a fake AI and a separate test database.
@@ -366,7 +366,7 @@ New features (review Phases 5 and 6):
   allowance (`DAILY_CHAPTER_LIMIT`), no cross-site API access, slowed password guessing.
 - **Story-order timeline** and **JSON lore export** (`GET /export`).
 
-**Deployment:** `Dockerfile` runs as a non-root user with a health check and ONE worker
+**Deployment:** Run with ONE worker
 (background jobs live in the web process); `render.yaml` switches sign-in on and generates
 `SECRET_KEY`. See [DEPLOY.md](DEPLOY.md).
 
@@ -508,9 +508,7 @@ Interactive documentation for every endpoint: http://127.0.0.1:8000/docs
 storyforge/
 ├── README.md
 ├── DEPLOY.md              # how to put it online
-├── Dockerfile             # backend + website in one container
 ├── render.yaml            # Render deployment blueprint
-├── docker-compose.yml     # local Postgres + pgvector (and optionally the app)
 ├── .github/workflows/tests.yml   # runs the tests on every push
 ├── frontend/
 │   ├── index.html         # the website (no build step)
@@ -546,16 +544,19 @@ storyforge/
 
 ## Setup
 
-You need **Docker Desktop** and **Python 3.10 or newer**. Commands are shown for Windows
+You need **PostgreSQL** (with `pgvector`) and **Python 3.10 or newer**. Commands are shown for Windows
 (PowerShell) and Mac/Linux (Terminal); run them from the project folder.
 
-### 1. Start the database
+### 1. Set up the database
+Ensure your native PostgreSQL service is running and create the `storyforge` database:
+```sql
+CREATE DATABASE storyforge;
 ```
-docker compose up -d
+Configure your connection string in `backend/.env` (see `backend/.env.example`):
 ```
-The app creates its tables automatically when it starts. If you set up the database before
-September 2026, reset it once (this deletes stored test data): `docker compose down -v`, then
-`docker compose up -d`.
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/storyforge
+```
+The app creates its tables automatically when it starts.
 
 ### 2. Start the backend and website
 Windows (PowerShell):

@@ -15,7 +15,7 @@ MAX_CHARS_PER_PIECE = 12000
 # however long the text is, so reading in small passages records far more of the detail.
 # Each passage is sent with the passage before it as context, to work out what "he" or
 # "it" refers to. Bigger = fewer AI calls but less detail; smaller = more calls.
-READ_PASSAGE_CHARS = max(200, int(os.getenv("READ_PASSAGE_CHARS", "700")))
+READ_PASSAGE_CHARS = max(200, int(os.getenv("READ_PASSAGE_CHARS", "2000")))
 
 # A pronoun is not a name: facts "about" these can't be linked to anyone, so they're dropped.
 PRONOUNS = {"he", "she", "they", "him", "her", "them", "it", "his", "hers", "their",

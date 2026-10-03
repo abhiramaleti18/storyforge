@@ -7,7 +7,7 @@ One book = one job at a time (a per-book lock), so two browser tabs adding chapt
 same book can't create duplicate characters or chapter numbers. Different books run side by
 side. Jobs are recorded in the database, so progress survives a page reload.
 
-This runs inside the web process: deploy with ONE worker process (the Dockerfile does).
+This runs inside the web process: deploy with ONE worker process.
 """
 import json
 import os

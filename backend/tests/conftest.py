@@ -4,7 +4,7 @@ Shared test setup. The tests use:
   - a FAKE AI, so tests are free, fast, and don't need an NVIDIA key or internet.
 
 Run from the backend folder:   pytest
-Needs the Docker database running (docker compose up -d).
+Needs a native PostgreSQL database running.
 """
 import json
 import os
@@ -18,7 +18,10 @@ import pytest
 BACKEND = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND))
 
-MAIN_URL = os.environ.get("DATABASE_URL", "postgresql://storyforge:storyforge@localhost:5432/storyforge")
+from dotenv import load_dotenv
+load_dotenv(BACKEND / ".env")
+
+MAIN_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/storyforge")
 TEST_URL = os.environ.get("TEST_DATABASE_URL") or urlunparse(urlparse(MAIN_URL)._replace(path="/storyforge_test"))
 os.environ["DATABASE_URL"] = TEST_URL
 os.environ["NVIDIA_API_KEY"] = "fake-key-for-tests"
@@ -107,7 +110,7 @@ def fake_ai(monkeypatch):
     if not DB_OK:
         # A FAILURE, not a skip: a skipped suite looks green with zero tests run.
         # Set SKIP_DB_TESTS=1 to skip on purpose.
-        message = f"Test database not reachable at {TEST_URL}. Start it with: docker compose up -d"
+        message = f"Test database not reachable at {TEST_URL}. Ensure native PostgreSQL is running."
         if os.environ.get("SKIP_DB_TESTS") == "1":
             pytest.skip(message)
         pytest.fail(message)

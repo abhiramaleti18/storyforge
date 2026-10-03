@@ -18,20 +18,20 @@ from openai import OpenAI
 
 load_dotenv()
 
-CHAT_MODEL = os.getenv("CHAT_MODEL", "nvidia/nemotron-3-super-120b-a12b")
+CHAT_MODEL = os.getenv("CHAT_MODEL", "deepseek-ai/deepseek-v4.1-flash")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nvidia/nemotron-3-embed-1b")
 EMBED_BATCH_SIZE = 32  # how many facts to turn into vectors in one request
 
 # How many requests may be in flight to NVIDIA at the same time, IN TOTAL across the whole
-# app (default 4). Higher is faster; if NVIDIA keeps refusing requests with
+# app (default 8). Higher is faster; if NVIDIA keeps refusing requests with
 # "429 Too Many Requests", lower it in .env.
-MAX_PARALLEL_AI_CALLS = max(1, int(os.getenv("MAX_PARALLEL_AI_CALLS", "4")))
+MAX_PARALLEL_AI_CALLS = max(1, int(os.getenv("MAX_PARALLEL_AI_CALLS", "8")))
 
-# Cap on requests per minute (default 30; 0 = no cap). NVIDIA's free tier limits how many
+# Cap on requests per minute (default 60; 0 = no cap). NVIDIA's free tier limits how many
 # requests an account may make in a period; going over gets every request refused with
 # "429 Too Many Requests" for a while. Pacing requests keeps us under the limit.
-# Raise it if your NVIDIA plan allows more.
-MAX_REQUESTS_PER_MINUTE = max(0, int(os.getenv("MAX_REQUESTS_PER_MINUTE", "30")))
+# Lower it if you keep hitting 429s; raise it if your NVIDIA plan allows more.
+MAX_REQUESTS_PER_MINUTE = max(0, int(os.getenv("MAX_REQUESTS_PER_MINUTE", "60")))
 
 # When NVIDIA says "too many requests", keep waiting (all requests pause together) for up
 # to this many seconds before giving up. Other errors use RETRY_ATTEMPTS instead.
@@ -208,6 +208,12 @@ def _permanent_problem(error: Exception) -> str | None:
     return None
 
 
+def _is_empty_response(error: Exception) -> bool:
+    """NVIDIA sometimes returns an empty completion (no text, no tool call). Retry it."""
+    msg = str(error).lower()
+    return isinstance(error, openai.InternalServerError) and "output text or tool calls" in msg
+
+
 def _retry_wait(error: Exception, attempt: int) -> float:
     """
     How long to wait before the next try: 2, 4, 8, 16, 32... seconds (up to 60), plus a
@@ -263,6 +269,15 @@ def with_retries(action, what: str, attempts: int | None = None):
                       f"{pause:.0f}s (waited {waited:.0f}s so far)", flush=True)
                 _wait_for_cooldown()
                 continue
+            if _is_empty_response(error):
+                failures += 1
+                if failures >= attempts:
+                    break
+                wait = _retry_wait(error, failures)
+                print(f"  [retry] {what}: NVIDIA returned an empty response; "
+                      f"trying again in {wait:.0f}s", flush=True)
+                _pause(wait)
+                continue
             failures += 1
             if failures >= attempts:
                 break
@@ -299,11 +314,12 @@ _unsupported_modes: set[str] = set()   # modes the service rejected; we fall bac
 
 def _thinking_options(mode: str | None = None) -> dict:
     mode = mode or THINKING_MODE
-    if mode in _unsupported_modes:
-        mode = "off"
-    kwargs = {"off": {"enable_thinking": False},
-              "low": {"enable_thinking": True, "low_effort": True},
-              "on": {"enable_thinking": True}}[mode]
+    if mode in _unsupported_modes or mode == "off":
+        return {}
+    kwargs = {"low": {"enable_thinking": True, "low_effort": True},
+              "on": {"enable_thinking": True}}.get(mode)
+    if not kwargs:
+        return {}
     return {"extra_body": {"chat_template_kwargs": kwargs}}
 
 

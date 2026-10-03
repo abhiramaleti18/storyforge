@@ -35,7 +35,7 @@ load_dotenv(BACKEND / ".env")
 
 
 def eval_database_url() -> str:
-    main_url = os.environ.get("DATABASE_URL", "postgresql://storyforge:storyforge@localhost:5432/storyforge")
+    main_url = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/storyforge")
     url = os.environ.get("EVAL_DATABASE_URL")
     if not url:
         parts = urlparse(main_url)

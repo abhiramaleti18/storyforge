@@ -1,8 +1,8 @@
 # Putting StoryForge online
 
-StoryForge needs two things online: the **app** (backend + website in one container) and a
+StoryForge needs two things: the **app** (backend + website) and a
 **Postgres database with pgvector**. This guide uses Neon for the database and Render for the
-app. Any host that runs Docker and any Postgres with pgvector 0.7 or newer also works.
+app. Any host that runs Python and any Postgres with pgvector 0.7 or newer also works.
 
 Time needed: about 20 minutes.
 
@@ -12,7 +12,7 @@ Time needed: about 20 minutes.
    Create a new key at https://build.nvidia.com and delete the old one.
 2. **Commit and push everything** to a GitHub repository. Check that `backend/.env` is NOT
    committed (`git status` must not list it; `.gitignore` already excludes it).
-3. **Run the tests once locally:** `docker compose up -d`, then in `backend/`:
+3. **Run the tests once locally:** ensure your native PostgreSQL is running, then in `backend/`:
    `pip install -r requirements-dev.txt` and `pytest`. All tests should pass.
 
 ## 1. Create the database (Neon)
@@ -27,7 +27,7 @@ Time needed: about 20 minutes.
 ## 2. Deploy the app (Render)
 
 1. On https://render.com choose **New → Blueprint** and pick your repository. Render reads
-   `render.yaml` and sets up a web service from the `Dockerfile`.
+   `render.yaml` and sets up the web service.
 2. When asked, fill in:
    - `NVIDIA_API_KEY`: your new key
    - `DATABASE_URL`: the Neon connection string
@@ -56,7 +56,7 @@ Time needed: about 20 minutes.
   sleep or restarts is marked "failed" with a clear message; just add it again. For regular
   use, the Starter plan avoids both.
 - **One worker.** Background jobs run inside the web process, so the app must run as ONE
-  process (the Dockerfile does this). Don't raise the worker count.
+  process (uvicorn with `--workers 1`). Don't raise the worker count.
 - **Database size.** Each fact stores a 2048-number search vector (about 8 KB). Neon's free
   0.5 GB holds roughly 50,000 facts, which is several novels.
 - **NVIDIA limits.** The free NVIDIA tier limits requests per minute. StoryForge paces itself
@@ -64,10 +64,11 @@ Time needed: about 20 minutes.
 - **Backups.** Every book can be downloaded as JSON from the Books page (Export JSON). Neon
   also keeps point-in-time history.
 
-## Run exactly the deployed setup on your own computer
+## Run locally on your own computer
 
 ```
-docker compose --profile app up --build
+cd backend
+uvicorn main:app --reload
 ```
 
 then open http://localhost:8000. To try it with sign-in switched on, add
